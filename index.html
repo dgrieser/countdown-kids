@@ -267,6 +267,7 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: #f0f0f0;
+        margin-left: 5px;
       }
 
       .tasks-list {
@@ -290,7 +291,7 @@
 
       .task-row .delete-task-button {
         justify-self: end;
-        align-self: center;
+        align-self: end;
       }
 
       .delete-button {
@@ -511,6 +512,7 @@
           countdownInterval: null,
           countdownEndTime: null,
           completedTasks: [],
+          pendingFocus: null,
         };
 
         function loadSequences() {
@@ -568,6 +570,20 @@
             return aHours - bHours;
           }
           return aMinutes - bMinutes;
+        }
+
+        function addMinutesToDeadline(deadline, minutesToAdd) {
+          const [hours = 0, minutes = 0] = deadline.split(":").map(Number);
+          if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+            return "06:00";
+          }
+          const totalMinutes =
+            (hours * 60 + minutes + minutesToAdd + 1440) % 1440;
+          const newHours = Math.floor(totalMinutes / 60);
+          const newMinutes = totalMinutes % 60;
+          return `${String(newHours).padStart(2, "0")}:${String(
+            newMinutes
+          ).padStart(2, "0")}`;
         }
 
         function showScreen(screenEl) {
@@ -812,7 +828,7 @@
             return;
           }
           sequence.name = name.trim() || "Untitled sequence";
-          persistSequences({ rerenderConfig: true });
+          persistSequences({ rerenderConfig: false });
         }
 
         function updateTask(sequenceId, taskId, updates) {
@@ -829,12 +845,22 @@
             const trimmed = updates.name.trim();
             task.name = trimmed || "Task";
           }
+          let needsRerender = false;
           if (Object.prototype.hasOwnProperty.call(updates, "deadline")) {
             task.deadline = updates.deadline || "06:00";
+            needsRerender = true;
+            state.pendingFocus = {
+              sequenceId,
+              taskId,
+              field: "taskDeadline",
+            };
           }
 
-          sequence.tasks.sort(sortByDeadline);
-          persistSequences({ rerenderConfig: true });
+          if (needsRerender) {
+            sequence.tasks.sort(sortByDeadline);
+          }
+
+          persistSequences({ rerenderConfig: needsRerender });
         }
 
         function addTask(sequenceId) {
@@ -842,12 +868,23 @@
           if (!sequence) {
             return;
           }
-          sequence.tasks.push({
+          const lastTask =
+            sequence.tasks[sequence.tasks.length - 1] || null;
+          const newDeadline = lastTask
+            ? addMinutesToDeadline(lastTask.deadline, 30)
+            : "06:00";
+          const newTask = {
             id: createId(),
             name: "Task name",
-            deadline: "06:00",
-          });
+            deadline: newDeadline,
+          };
+          sequence.tasks.push(newTask);
           sequence.tasks.sort(sortByDeadline);
+          state.pendingFocus = {
+            sequenceId,
+            taskId: newTask.id,
+            field: "taskName",
+          };
           persistSequences({ rerenderConfig: true });
         }
 
@@ -872,6 +909,7 @@
           configEmptyState.style.display =
             sequences.length === 0 ? "block" : "none";
           if (sequences.length === 0) {
+            state.pendingFocus = null;
             return;
           }
 
@@ -893,7 +931,10 @@
 
             card
               .querySelector(".add-task-button")
-              .addEventListener("click", () => addTask(sequence.id));
+              .addEventListener("click", (event) => {
+                addTask(sequence.id);
+                event.currentTarget.blur();
+              });
 
             card
               .querySelector(".delete-sequence-button")
@@ -901,6 +942,58 @@
 
             sequenceEditor.appendChild(card);
           });
+
+          applyPendingFocus();
+        }
+
+        function applyPendingFocus() {
+          const focusRequest = state.pendingFocus;
+          if (!focusRequest) {
+            return;
+          }
+          const { sequenceId, taskId, field } = focusRequest;
+          const card = sequenceEditor.querySelector(
+            `.sequence-card[data-sequence-id="${sequenceId}"]`
+          );
+          if (!card) {
+            state.pendingFocus = null;
+            return;
+          }
+
+          if (
+            field === "sequenceName" &&
+            typeof card.scrollIntoView === "function"
+          ) {
+            card.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+
+          let target = null;
+          if (field === "sequenceName") {
+            target = card.querySelector('input[name="sequence-name"]');
+          } else if (field === "taskName" && taskId) {
+            target = card.querySelector(
+              `.task-row[data-task-id="${taskId}"] input[name="task-name"]`
+            );
+          } else if (field === "taskDeadline" && taskId) {
+            target = card.querySelector(
+              `.task-row[data-task-id="${taskId}"] input[name="task-deadline"]`
+            );
+          }
+
+          if (target) {
+            setTimeout(() => {
+              try {
+                target.focus({ preventScroll: true });
+              } catch (error) {
+                target.focus();
+              }
+              if (typeof target.select === "function") {
+                target.select();
+              }
+            }, 0);
+          }
+
+          state.pendingFocus = null;
         }
 
         function createTaskRow(sequenceId, task) {
@@ -955,6 +1048,10 @@
             ],
           };
           state.sequences.push(newSequence);
+          state.pendingFocus = {
+            sequenceId: newSequence.id,
+            field: "sequenceName",
+          };
           persistSequences({ rerenderConfig: true });
         }
 
@@ -984,7 +1081,10 @@
 
         homeButton.addEventListener("click", goHome);
 
-        addSequenceButton.addEventListener("click", addSequence);
+        addSequenceButton.addEventListener("click", (event) => {
+          addSequence();
+          event.currentTarget.blur();
+        });
 
         window.addEventListener("beforeunload", () => {
           clearCountdownTimers();
