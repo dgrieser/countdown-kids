@@ -173,15 +173,17 @@
       }
 
       .completed-tasks {
-        position: absolute;
-        top: 24px;
-        left: 32px;
+        position: fixed;
+        top: 128px;
+        left: 128px;
         display: flex;
         flex-direction: column;
         gap: 8px;
         font-size: 1.5rem;
-        max-width: 280px;
+        max-width: 320px;
         color: #9c9c9c;
+        z-index: 5;
+        align-items: flex-start;
       }
 
       .completed-task {
