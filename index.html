@@ -278,7 +278,7 @@
 
       .task-row {
         display: grid;
-        grid-template-columns: 1fr 140px min-content;
+        grid-template-columns: 1fr minmax(200px, 260px) min-content;
         gap: 12px;
         align-items: center;
       }
@@ -330,6 +330,46 @@
         font-size: 1.1rem;
         max-width: 560px;
         margin-top: 24px;
+      }
+
+      .time-input-wrap {
+        position: relative;
+        width: 100%;
+      }
+
+      .time-input-wrap input[type="time"] {
+        width: 100%;
+        padding-right: 48px;
+      }
+
+      .time-now-button {
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
+        width: 32px;
+        height: 32px;
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      }
+
+      .time-now-button svg {
+        width: 16px;
+        height: 16px;
+        fill: #fff;
+        pointer-events: none;
+      }
+
+      .time-now-button:hover,
+      .time-now-button:focus {
+        outline: none;
+        transform: translateY(-50%) scale(1.05);
       }
 
       @media (max-width: 720px) {
@@ -463,7 +503,16 @@
         </label>
         <label>
           <span class="input-label">Deadline</span>
-          <input type="time" name="task-deadline" required />
+          <div class="time-input-wrap">
+            <input type="time" name="task-deadline" required />
+            <button type="button" class="time-now-button" title="Set to current time" aria-label="Set to current time">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 4a8 8 0 1 1-8 8H2a10 10 0 1 0 3-7.32V2H3v6h6V6H6.26A8 8 0 0 1 12 4Zm-1 4v5l4.25 2.52.75-1.23-3.5-2.06V8Z"
+                />
+              </svg>
+            </button>
+          </div>
         </label>
         <button type="button" class="delete-button delete-task-button">
           Remove
@@ -584,6 +633,16 @@
           return `${String(newHours).padStart(2, "0")}:${String(
             newMinutes
           ).padStart(2, "0")}`;
+        }
+
+        function getCurrentTimeString() {
+          const now = new Date();
+          const hours = now.getHours();
+          const minutes = now.getMinutes();
+          return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+            2,
+            "0"
+          )}`;
         }
 
         function showScreen(screenEl) {
@@ -972,16 +1031,16 @@
             target = card.querySelector('input[name="sequence-name"]');
           } else if (field === "taskName" && taskId) {
             target = card.querySelector(
-              `.task-row[data-task-id="${taskId}"] input[name="task-name"]`
-            );
-          } else if (field === "taskDeadline" && taskId) {
-            target = card.querySelector(
-              `.task-row[data-task-id="${taskId}"] input[name="task-deadline"]`
-            );
-          }
+            `.task-row[data-task-id="${taskId}"] input[name="task-name"]`
+          );
+        } else if (field === "taskDeadline" && taskId) {
+          target = card.querySelector(
+            `.task-row[data-task-id="${taskId}"] input[name="task-deadline"]`
+          );
+        }
 
-          if (target) {
-            setTimeout(() => {
+        if (target) {
+          setTimeout(() => {
               try {
                 target.focus({ preventScroll: true });
               } catch (error) {
@@ -1003,6 +1062,7 @@
           row.dataset.taskId = task.id;
           const nameInput = row.querySelector('input[name="task-name"]');
           const deadlineInput = row.querySelector('input[name="task-deadline"]');
+          const nowButton = row.querySelector(".time-now-button");
           nameInput.value = task.name;
           deadlineInput.value = task.deadline;
           nameInput.addEventListener("change", (event) =>
@@ -1011,6 +1071,14 @@
           deadlineInput.addEventListener("change", (event) =>
             updateTask(sequenceId, task.id, { deadline: event.target.value })
           );
+          if (nowButton) {
+            nowButton.addEventListener("click", (event) => {
+              const currentTime = getCurrentTimeString();
+              deadlineInput.value = currentTime;
+              updateTask(sequenceId, task.id, { deadline: currentTime });
+              event.currentTarget.blur();
+            });
+          }
           row
             .querySelector(".delete-task-button")
             .addEventListener("click", () =>
