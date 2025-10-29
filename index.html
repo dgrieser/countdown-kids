@@ -564,6 +564,8 @@
           countdownEndTime: null,
           completedTasks: [],
           pendingFocus: null,
+          taskTimes: [],
+          sequenceDayOffset: 0,
         };
 
         function loadSequences() {
@@ -652,6 +654,82 @@
           return true;
         }
 
+        function computeTaskDate(deadline, offsetDays) {
+          const [hours = 0, minutes = 0] = deadline.split(":").map(Number);
+          const target = new Date();
+          target.setHours(0, 0, 0, 0);
+          target.setDate(target.getDate() + offsetDays);
+          target.setHours(hours, minutes, 0, 0);
+          return target;
+        }
+
+        function determineTaskTimes(sequence) {
+          const now = new Date();
+          if (!sequence.tasks.length) {
+            return { offset: 0, times: [] };
+          }
+
+          const offsets = [-1, 0, 1];
+          const offsetTimes = new Map();
+          offsets.forEach((offset) => {
+            offsetTimes.set(
+              offset,
+              sequence.tasks.map((task) => computeTaskDate(task.deadline, offset))
+            );
+          });
+
+          const nowMs = now.getTime();
+
+          let lastCandidate = null;
+          [-1, 0].forEach((offset) => {
+            offsetTimes.get(offset).forEach((time) => {
+              if (time.getTime() <= nowMs) {
+                if (!lastCandidate || time.getTime() > lastCandidate.time.getTime()) {
+                  lastCandidate = { time, offset };
+                }
+              }
+            });
+          });
+
+          let nextCandidate = null;
+          [0, 1].forEach((offset) => {
+            offsetTimes.get(offset).forEach((time) => {
+              if (time.getTime() > nowMs) {
+                if (!nextCandidate || time.getTime() < nextCandidate.time.getTime()) {
+                  nextCandidate = { time, offset };
+                }
+              }
+            });
+          });
+
+          if (!lastCandidate && nextCandidate) {
+            const chosenTimes = offsetTimes
+              .get(nextCandidate.offset)
+              .slice();
+            return { offset: nextCandidate.offset, times: chosenTimes };
+          }
+
+          if (!nextCandidate && lastCandidate) {
+            const chosenTimes = offsetTimes.get(lastCandidate.offset).slice();
+            return { offset: lastCandidate.offset, times: chosenTimes };
+          }
+
+          if (!lastCandidate && !nextCandidate) {
+            const chosenTimes = (offsetTimes.get(0) || []).slice();
+            return { offset: 0, times: chosenTimes };
+          }
+
+          const diffToLast = nowMs - lastCandidate.time.getTime();
+          const diffToNext = nextCandidate.time.getTime() - nowMs;
+
+          const chosenOffset =
+            diffToLast < diffToNext ? lastCandidate.offset : nextCandidate.offset;
+
+          const times = offsetTimes.get(chosenOffset).slice();
+
+          return { offset: chosenOffset, times };
+        }
+
         function getCurrentTimeString() {
           const now = new Date();
           if (now.getSeconds() > 0 || now.getMilliseconds() > 0) {
@@ -709,6 +787,7 @@
             clearTimeout(state.currentTimeout);
             state.currentTimeout = null;
           }
+          state.countdownEndTime = null;
         }
 
         function startSequence(sequenceId) {
@@ -719,12 +798,32 @@
 
           clearCountdownTimers();
           state.currentSequenceId = sequenceId;
-          state.currentTaskIndex = 0;
-          state.completedTasks = [];
           countdownDisplay.classList.remove("blink");
           countdownDisplay.style.color = "#ffffff";
           countdownContainerEl.style.display = "block";
-          completedTasksEl.innerHTML = "";
+
+          const now = new Date();
+          const nowMs = now.getTime();
+          const { offset, times } = determineTaskTimes(sequence);
+          state.sequenceDayOffset = offset;
+          state.taskTimes = times;
+
+          const completedNames = [];
+          let nextIndex = sequence.tasks.length;
+          if (times.length > 0) {
+            times.forEach((time, idx) => {
+              if (time.getTime() <= nowMs) {
+                completedNames.push(sequence.tasks[idx].name);
+              }
+            });
+            const upcomingIndex = times.findIndex((time) => time.getTime() > nowMs);
+            nextIndex = upcomingIndex === -1 ? sequence.tasks.length : upcomingIndex;
+          } else {
+            nextIndex = 0;
+          }
+
+          state.completedTasks = completedNames.reverse();
+          state.currentTaskIndex = nextIndex;
           renderCompletedTasks();
           showScreen(countdownScreen);
           advanceToNextTask();
@@ -773,8 +872,9 @@
 
           const task = sequence.tasks[state.currentTaskIndex];
           currentTaskNameEl.textContent = task.name;
-
-          const targetTime = buildDeadlineDate(task.deadline);
+          const targetTime =
+            state.taskTimes[state.currentTaskIndex] ||
+            computeTaskDate(task.deadline, state.sequenceDayOffset || 0);
           const now = new Date();
           const diffMs = targetTime - now;
 
@@ -788,18 +888,10 @@
           state.countdownInterval = setInterval(updateCountdown, 1000);
         }
 
-        function buildDeadlineDate(deadline) {
-          const [hours, minutes] = deadline.split(":").map(Number);
-          const now = new Date();
-          const target = new Date(now);
-          target.setHours(hours, minutes, 0, 0);
-          if (target.getTime() < now.getTime()) {
-            target.setDate(target.getDate() + 1);
-          }
-          return target;
-        }
-
         function updateCountdown() {
+          if (!state.countdownEndTime) {
+            return;
+          }
           const now = new Date();
           let diff = state.countdownEndTime - now;
           if (diff <= 0) {
@@ -1218,6 +1310,10 @@
           countdownDisplay.textContent = "00:00:00";
           currentTaskNameEl.textContent = "";
           countdownContainerEl.style.display = "block";
+          state.completedTasks = [];
+          renderCompletedTasks();
+          state.taskTimes = [];
+          state.sequenceDayOffset = 0;
           renderHomeScreen();
         }
 
