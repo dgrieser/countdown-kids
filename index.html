@@ -339,7 +339,7 @@
 
       .time-input-wrap input[type="time"] {
         width: 100%;
-        padding-right: 40px;
+        padding-right: 48px;
       }
 
       .time-now-button {
@@ -635,6 +635,10 @@
 
         function getCurrentTimeString() {
           const now = new Date();
+          if (now.getSeconds() > 0 || now.getMilliseconds() > 0) {
+            now.setMinutes(now.getMinutes() + 1);
+          }
+          now.setSeconds(0, 0);
           const hours = now.getHours();
           const minutes = now.getMinutes();
           return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
@@ -893,31 +897,44 @@
           if (!sequence) {
             return;
           }
-          const task = sequence.tasks.find((item) => item.id === taskId);
-          if (!task) {
+          const hasDeadlineUpdate = Object.prototype.hasOwnProperty.call(
+            updates,
+            "deadline"
+          );
+
+          let foundTask = false;
+          let updatedTasks = sequence.tasks.map((item) => {
+            if (item.id !== taskId) {
+              return item;
+            }
+            const nextTask = { ...item };
+            if (Object.prototype.hasOwnProperty.call(updates, "name")) {
+              const trimmed = updates.name.trim();
+              nextTask.name = trimmed || "Task";
+            }
+            if (hasDeadlineUpdate) {
+              nextTask.deadline = updates.deadline || "06:00";
+            }
+            foundTask = true;
+            return nextTask;
+          });
+
+          if (!foundTask) {
             return;
           }
 
-          if (Object.prototype.hasOwnProperty.call(updates, "name")) {
-            const trimmed = updates.name.trim();
-            task.name = trimmed || "Task";
-          }
-          let needsRerender = false;
-          if (Object.prototype.hasOwnProperty.call(updates, "deadline")) {
-            task.deadline = updates.deadline || "06:00";
-            needsRerender = true;
-            state.pendingFocus = {
-              sequenceId,
-              taskId,
-              field: "taskDeadline",
-            };
-          }
+          sequence.tasks = hasDeadlineUpdate
+            ? updatedTasks.slice().sort(sortByDeadline)
+            : updatedTasks;
 
-          if (needsRerender) {
-            sequence.tasks.sort(sortByDeadline);
-          }
+          persistSequences({ rerenderConfig: false });
 
-          persistSequences({ rerenderConfig: needsRerender });
+          if (
+            hasDeadlineUpdate &&
+            configScreen.classList.contains("active")
+          ) {
+            updateTaskOrderInDom(sequenceId);
+          }
         }
 
         function addTask(sequenceId) {
@@ -935,8 +952,7 @@
             name: "Task name",
             deadline: newDeadline,
           };
-          sequence.tasks.push(newTask);
-          sequence.tasks.sort(sortByDeadline);
+          sequence.tasks = [...sequence.tasks, newTask].sort(sortByDeadline);
           state.pendingFocus = {
             sequenceId,
             taskId: newTask.id,
@@ -1029,16 +1045,16 @@
             target = card.querySelector('input[name="sequence-name"]');
           } else if (field === "taskName" && taskId) {
             target = card.querySelector(
-            `.task-row[data-task-id="${taskId}"] input[name="task-name"]`
-          );
-        } else if (field === "taskDeadline" && taskId) {
-          target = card.querySelector(
-            `.task-row[data-task-id="${taskId}"] input[name="task-deadline"]`
-          );
-        }
+              `.task-row[data-task-id="${taskId}"] input[name="task-name"]`
+            );
+          } else if (field === "taskDeadline" && taskId) {
+            target = card.querySelector(
+              `.task-row[data-task-id="${taskId}"] input[name="task-deadline"]`
+            );
+          }
 
-        if (target) {
-          setTimeout(() => {
+          if (target) {
+            setTimeout(() => {
               try {
                 target.focus({ preventScroll: true });
               } catch (error) {
@@ -1075,6 +1091,12 @@
               deadlineInput.value = currentTime;
               updateTask(sequenceId, task.id, { deadline: currentTime });
               event.currentTarget.blur();
+              try {
+                deadlineInput.focus({ preventScroll: true });
+              } catch (error) {
+                deadlineInput.focus();
+              }
+              deadlineInput.select();
             });
           }
           row
@@ -1083,6 +1105,49 @@
               deleteTask(sequenceId, task.id)
             );
           return row;
+        }
+
+        function updateTaskOrderInDom(sequenceId) {
+          const sequence = getSequence(sequenceId);
+          if (!sequence) {
+            return;
+          }
+          const card = sequenceEditor.querySelector(
+            `.sequence-card[data-sequence-id="${sequenceId}"]`
+          );
+          if (!card) {
+            return;
+          }
+          const tasksList = card.querySelector(".tasks-list");
+          if (!tasksList) {
+            return;
+          }
+
+          const activeElement = document.activeElement;
+          const shouldRefocus =
+            activeElement && tasksList.contains(activeElement);
+
+          const fragment = document.createDocumentFragment();
+          sequence.tasks.forEach((task) => {
+            const row = tasksList.querySelector(
+              `.task-row[data-task-id="${task.id}"]`
+            );
+            if (row) {
+              fragment.appendChild(row);
+            }
+          });
+          tasksList.appendChild(fragment);
+
+          if (shouldRefocus && typeof activeElement.focus === "function") {
+            try {
+              activeElement.focus({ preventScroll: true });
+            } catch (error) {
+              activeElement.focus();
+            }
+            if (typeof activeElement.select === "function") {
+              activeElement.select();
+            }
+          }
         }
 
         function deleteSequence(sequenceId) {
