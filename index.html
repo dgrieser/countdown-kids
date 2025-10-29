@@ -822,7 +822,7 @@
             nextIndex = 0;
           }
 
-          state.completedTasks = completedNames.reverse();
+          state.completedTasks = completedNames;
           state.currentTaskIndex = nextIndex;
           renderCompletedTasks();
           showScreen(countdownScreen);
@@ -974,7 +974,7 @@
             return;
           }
 
-          state.completedTasks.unshift(task.name);
+          state.completedTasks.push(task.name);
           renderCompletedTasks();
 
           state.currentTaskIndex += 1;
