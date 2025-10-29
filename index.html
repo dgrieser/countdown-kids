@@ -147,6 +147,7 @@
         font-weight: 700;
         letter-spacing: 0.12em;
         margin-bottom: 16px;
+        font-family: "Roboto Mono", "Courier New", Courier, monospace;
         transition: color 0.7s ease;
       }
 
@@ -633,6 +634,21 @@
           ).padStart(2, "0")}`;
         }
 
+        function arraysEqual(a, b) {
+          if (a === b) {
+            return true;
+          }
+          if (!a || !b || a.length !== b.length) {
+            return false;
+          }
+          for (let i = 0; i < a.length; i += 1) {
+            if (a[i] !== b[i]) {
+              return false;
+            }
+          }
+          return true;
+        }
+
         function getCurrentTimeString() {
           const now = new Date();
           if (now.getSeconds() > 0 || now.getMilliseconds() > 0) {
@@ -901,6 +917,9 @@
             updates,
             "deadline"
           );
+          const prevOrder = hasDeadlineUpdate
+            ? sequence.tasks.map((item) => item.id)
+            : null;
 
           let foundTask = false;
           let updatedTasks = sequence.tasks.map((item) => {
@@ -923,17 +942,20 @@
             return;
           }
 
-          sequence.tasks = hasDeadlineUpdate
-            ? updatedTasks.slice().sort(sortByDeadline)
-            : updatedTasks;
+          if (hasDeadlineUpdate) {
+            updatedTasks = updatedTasks.slice().sort(sortByDeadline);
+          }
+
+          sequence.tasks = updatedTasks;
 
           persistSequences({ rerenderConfig: false });
 
-          if (
-            hasDeadlineUpdate &&
-            configScreen.classList.contains("active")
-          ) {
-            updateTaskOrderInDom(sequenceId);
+          if (hasDeadlineUpdate) {
+            const nextOrder = sequence.tasks.map((item) => item.id);
+            const orderChanged = !arraysEqual(prevOrder, nextOrder);
+            if (orderChanged && configScreen.classList.contains("active")) {
+              updateTaskOrderInDom(sequenceId);
+            }
           }
         }
 
@@ -1054,13 +1076,15 @@
           }
 
           if (target) {
+            const shouldSelect =
+              field === "sequenceName" || field === "taskName";
             setTimeout(() => {
               try {
                 target.focus({ preventScroll: true });
               } catch (error) {
                 target.focus();
               }
-              if (typeof target.select === "function") {
+              if (shouldSelect && typeof target.select === "function") {
                 target.select();
               }
             }, 0);
@@ -1143,9 +1167,6 @@
               activeElement.focus({ preventScroll: true });
             } catch (error) {
               activeElement.focus();
-            }
-            if (typeof activeElement.select === "function") {
-              activeElement.select();
             }
           }
         }
