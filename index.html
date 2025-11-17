@@ -523,6 +523,38 @@
     </template>
 
     <script>
+      function playGentleAlarm() {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Parameters for a softer boop
+        const frequency = 660; // Lower frequency for less harshness
+        const duration = 0.25; // Slightly longer than a harsh beep
+        const gap = 0.3;
+        const volume = 0.3; // Lower volume
+
+        for (let i = 0; i < 3; i++) {
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+
+          oscillator.type = 'sine'; // Softer, more musical tone
+          oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+
+          let start = audioCtx.currentTime + i * (duration + gap);
+          let end = start + duration;
+
+          // Fade in and fade out for gentle effect
+          gainNode.gain.setValueAtTime(0.0001, start);
+          gainNode.gain.linearRampToValueAtTime(volume, start + 0.02);
+          gainNode.gain.linearRampToValueAtTime(volume, end - 0.04);
+          gainNode.gain.linearRampToValueAtTime(0.0001, end);
+
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+
+          oscillator.start(start);
+          oscillator.stop(end);
+        }
+      }
       (function () {
         const storageKey = "countdownKidsSequences";
         const BLINK_TOTAL_DURATION_MS = 3000;
@@ -952,6 +984,7 @@
         function handleCountdownFinished() {
           clearCountdownTimers();
           countdownDisplay.classList.add("blink");
+          playGentleAlarm();
 
           state.currentTimeout = setTimeout(() => {
             countdownDisplay.classList.remove("blink");
